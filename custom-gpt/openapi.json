@@ -44,7 +44,7 @@
       },
       "post": {
         "operationId": "writeSheet",
-        "summary": "Append a workout row to Log (or, optionally, update a row by key).",
+        "summary": "Prepend a workout to the top of Log (or append/update by key).",
         "requestBody": {
           "required": true,
           "content": {
@@ -63,11 +63,11 @@
                   },
                   "action": {
                     "type": "string",
-                    "enum": ["append", "update"],
-                    "description": "append = add a workout row to Log (normal use); update = optionally correct an existing row by key."
+                    "enum": ["prepend", "append", "update"],
+                    "description": "prepend = add a workout to the TOP of Log, newest-first, with a blank separator row (normal use); append = add to the bottom; update = optionally correct an existing row by key."
                   },
                   "rowData": {
-                    "description": "append: ordered array [Date, Workout, Order, Exercise, Set 1, Set 2, Set 3] — set cells are '<weight> lb x <reps>'. update: object of {header: value} for fields to change.",
+                    "description": "prepend: one row [Date, Workout, Order, Exercise, Set 1, Set 2, Set 3] OR a batch (array of such rows) to log a whole session at once — set cells are '<weight> lb x <reps>'. append: a single ordered row. update: object of {header: value} for fields to change.",
                     "oneOf": [
                       { "type": "array", "items": {} },
                       { "type": "object" }

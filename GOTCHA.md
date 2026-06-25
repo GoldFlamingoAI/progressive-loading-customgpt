@@ -1,50 +1,20 @@
 # GOTCHA.md — Known Limitations & Upgrade Paths
 
-## 1. Single-tab scaling: the GPT reads the entire `Log` on every request
+## 1. Single-tab scaling — handled by `Archive.gs`
 
-### What happens
+The GPT reads the entire `Log` on every request and scans in memory for the most
+recent row per exercise. Left unbounded, ~2,000 rows/year would eventually slow that
+read.
 
-Every coaching query ("What's Workout A today?") and every log write triggers a
-`readSheet(sheetName="Log")` call that returns **all rows** in the sheet. The GPT
-then scans in memory to find the most recent row per exercise.
+**This is now actively managed.** `apps-script/Archive.gs` keeps only the newest
+`ARCHIVE_KEEP_SESSIONS` (default **8** ≈ 4 weeks) distinct workout dates in `Log` and
+moves older rows to an `Archive` tab. Run it manually from the editor, or attach a
+weekly time trigger (`archiveOldWorkouts` → Time-driven → Week timer). The `Log` tab
+stays small and fast forever; full history is preserved in `Archive`.
 
-This is fine for months. At one session every two days and 11 exercises per session,
-you add roughly **2,000 rows per year**. After 1–2 years the GET response can grow
-to tens of KB and the GPT's lookup slows noticeably.
-
-### When to worry
-
-You probably won't notice until year 2+. If coaching responses start feeling sluggish
-or the GPT occasionally times out on the read, that's the signal.
-
-### Upgrade path — optional `Current` tab
-
-Add a second tab named **`Current`** with the same 7-column header as `Log`:
-
-```
-Date	Workout	Order	Exercise	Set 1	Set 2	Set 3
-```
-
-Keep it to one row per exercise (no blank rows). This tab holds only the **latest**
-state of each exercise — overwritten every session, never growing beyond ~11 rows.
-
-**Updated GPT behavior (no backend change needed):**
-
-- **Coach flow:** `readSheet(sheetName="Current")` — instant, always tiny.
-- **Log flow:** two calls in sequence:
-  1. `writeSheet` → `action: "update"` on `Current` (match `keyColumn: "Exercise"`)
-  2. `writeSheet` → `action: "append"` on `Log` (preserve the full history)
-
-The GAS backend already supports both `append` and `update` with `LockService`
-serialization — no code changes required. The only changes are:
-
-1. Create the `Current` tab and paste seed data (same rows as `Log` seed, one per exercise).
-2. Update the GPT system prompt: swap "Log" to "Current" in coaching reads, add the
-   `Current` update step to the log flow.
-3. Update `openapi.json` descriptions if you want to be explicit (optional).
-
-> The backend is intentionally schema-agnostic — it just reads/writes by tab name.
-> A new tab with the same headers requires zero backend changes.
+Tune retention by editing `ARCHIVE_KEEP_SESSIONS` at the top of `Archive.gs`. If you
+later want the GPT to read history, point a query at the `Archive` tab — the backend
+is schema-agnostic and needs no changes.
 
 ---
 
