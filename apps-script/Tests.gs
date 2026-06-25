@@ -18,17 +18,19 @@ function testAll() {
   // POST append round-trip to a scratch tab
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   let t = ss.getSheetByName('__test'); if (t) ss.deleteSheet(t);
-  t = ss.insertSheet('__test'); t.appendRow(['a', 'b']);
+  t = ss.insertSheet('__test'); t.appendRow(['a', 'b', 'c']);
   const tok = PROPS.getProperty('GPT_SECRET');
   doPost({ postData: { contents: JSON.stringify(
-    { token: tok, sheetName: '__test', action: 'append', rowData: ['x', 'y'] }) } });
+    { token: tok, sheetName: '__test', action: 'append', rowData: ['x', 'y', 'keep'] }) } });
   _assert(t.getLastRow() === 2, 'append added a row');
 
-  // POST update
+  // POST update — changes only the named field, leaves the rest intact
   doPost({ postData: { contents: JSON.stringify(
     { token: tok, sheetName: '__test', action: 'update',
       keyColumn: 'a', keyValue: 'x', rowData: { b: 'z' } }) } });
   _assert(t.getRange(2, 2).getValue() === 'z', 'update changed matched field');
+  _assert(t.getRange(2, 1).getValue() === 'x', 'update preserved key column');
+  _assert(t.getRange(2, 3).getValue() === 'keep', 'update preserved untouched field');
 
   ss.deleteSheet(t);
   Logger.log('ALL TESTS DONE');

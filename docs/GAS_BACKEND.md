@@ -11,7 +11,10 @@
 - Authenticate every request against a shared secret in Script Properties.
 - `doGet`: return a named tab as an array of row-objects keyed by the header row.
 - `doPost`: `append` a row (ordered array) or `update` a row (match key column, set
-  named fields).
+  named fields). Writes are serialized with `LockService` and update rewrites the
+  matched row in a single `setValues` call (other columns preserved).
+- Normalize Date cells to `yyyy-MM-dd` strings on read, so the GPT never receives ISO
+  timestamps for the `date` / `last_date` columns.
 - Always respond with `ContentService` JSON. Never throw to an HTML error page.
 
 ## 2. Non-Responsibilities
@@ -53,18 +56,20 @@ function doGet(e) {
   if (!sheetName) return _error('sheetName parameter is required');
 
   try {
-    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName(sheetName);
     if (!sheet) return _error('Sheet not found: ' + sheetName);
 
     const data = sheet.getDataRange().getValues();
     if (data.length < 2) return _json([]);   // header only or empty -> no rows
 
+    const tz = ss.getSpreadsheetTimeZone();
     const headers = data[0];
     const rows = data.slice(1)
       .filter(row => row.some(cell => cell !== '' && cell !== null))  // skip blank rows
       .map(row => {
         const obj = {};
-        headers.forEach((h, i) => { obj[h] = row[i]; });
+        headers.forEach((h, i) => { obj[h] = _cellValue(row[i], tz); });
         return obj;
       });
 
@@ -89,6 +94,15 @@ function doPost(e) {
   const action = body.action || 'append';
   if (!sheetName) return _error('sheetName is required');
 
+  // Serialize writes so a near-simultaneous update + append (e.g. logging from two
+  // devices) can never interleave and corrupt the sheet.
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000);
+  } catch (err) {
+    return _error('Busy: could not acquire write lock, try again');
+  }
+
   try {
     const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
     if (!sheet) return _error('Sheet not found: ' + sheetName);
@@ -98,6 +112,8 @@ function doPost(e) {
     return _error('Unknown action: ' + action);
   } catch (err) {
     return _error(err.message);
+  } finally {
+    lock.releaseLock();
   }
 }
 
@@ -134,10 +150,14 @@ function _doUpdate(sheet, body) {
     return _error('No row found where ' + keyColumn + ' = ' + keyValue);
   }
 
+  // Patch named fields in memory (unknown headers ignored — no new columns created),
+  // then write the whole row in ONE setValues call instead of one call per field.
+  const rowValues = data[targetRow - 1].slice();
   Object.keys(rowData).forEach(col => {
     const ci = headers.indexOf(col);
-    if (ci !== -1) sheet.getRange(targetRow, ci + 1).setValue(rowData[col]);
+    if (ci !== -1) rowValues[ci] = rowData[col];
   });
+  sheet.getRange(targetRow, 1, 1, rowValues.length).setValues([rowValues]);
 
   return _json({ status: 'ok', action: 'updated', row: targetRow });
 }
@@ -147,6 +167,13 @@ function _doUpdate(sheet, body) {
 function _authCheck(token) {
   const secret = PROPS.getProperty('GPT_SECRET');
   return !!secret && token === secret;
+}
+
+/** Normalize a cell for JSON. Dates -> 'yyyy-MM-dd' so the GPT never sees ISO
+ *  timestamps (Sheets auto-parses date strings into Date objects on write). */
+function _cellValue(value, tz) {
+  if (value instanceof Date) return Utilities.formatDate(value, tz, 'yyyy-MM-dd');
+  return value;
 }
 
 function _json(data) {
@@ -183,7 +210,10 @@ function _forbidden() {
 | Malformed POST JSON | `Invalid JSON body` |
 | `update` with no match | error, no write |
 | `update` field not in headers | silently skipped (no new columns created) |
+| `update` other columns | preserved untouched (whole row rewritten in one `setValues`) |
 | `append` rowData not array | error |
+| Date cells on read | normalized to `yyyy-MM-dd` strings (never ISO timestamps) |
+| Concurrent writes | serialized via `LockService` (10s wait, else `Busy` error) |
 
 ---
 
@@ -233,17 +263,19 @@ function testAll() {
   // POST append round-trip to a scratch tab
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   let t = ss.getSheetByName('__test'); if (t) ss.deleteSheet(t);
-  t = ss.insertSheet('__test'); t.appendRow(['a', 'b']);
+  t = ss.insertSheet('__test'); t.appendRow(['a', 'b', 'c']);
   const tok = PROPS.getProperty('GPT_SECRET');
   doPost({ postData: { contents: JSON.stringify(
-    { token: tok, sheetName: '__test', action: 'append', rowData: ['x', 'y'] }) } });
+    { token: tok, sheetName: '__test', action: 'append', rowData: ['x', 'y', 'keep'] }) } });
   _assert(t.getLastRow() === 2, 'append added a row');
 
-  // POST update
+  // POST update — changes only the named field, leaves the rest intact
   doPost({ postData: { contents: JSON.stringify(
     { token: tok, sheetName: '__test', action: 'update',
       keyColumn: 'a', keyValue: 'x', rowData: { b: 'z' } }) } });
   _assert(t.getRange(2, 2).getValue() === 'z', 'update changed matched field');
+  _assert(t.getRange(2, 1).getValue() === 'x', 'update preserved key column');
+  _assert(t.getRange(2, 3).getValue() === 'keep', 'update preserved untouched field');
 
   ss.deleteSheet(t);
   Logger.log('ALL TESTS DONE');
