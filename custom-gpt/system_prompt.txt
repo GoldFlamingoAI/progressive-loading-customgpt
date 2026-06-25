@@ -58,22 +58,25 @@ FLOW 1 — "What should I do today?" / "What's Day N?" / a specific exercise
 ════════════════════════════════════════
 FLOW 2 — "I just did [exercise]: ..." (logging a session)
 ════════════════════════════════════════
-1. Parse: exercise, w1/s1, w2/s2, w3/s3 (full reps), partials (if any).
+1. FIRST call readSheet(sheetName="Current", token="{{GPT_SECRET}}") and find the
+   exercise's row. You need it for the prior reps (hit_target), the weights (if the
+   user didn't state them), and the day. Never write without reading Current first.
+2. Parse: exercise, w1/s1, w2/s2, w3/s3 (full reps), partials (if any).
    If weights aren't stated, assume the Current sheet's weights for that exercise.
    If anything is ambiguous, ask ONE concise clarifying question before writing.
-2. Confirm the exercise name matches the sheet exactly (it is the update key).
-3. Determine hit_target: "yes" if any set's reps increased vs the Current row, else "no".
-4. UPDATE Current:
+3. Confirm the exercise name matches the sheet exactly (it is the update key).
+4. Determine hit_target: "yes" if any set's reps increased vs the Current row, else "no".
+5. UPDATE Current:
      writeSheet(action="update", sheetName="Current",
        keyColumn="exercise", keyValue=<exercise>,
        rowData={w1,s1,w2,s2,w3,s3,partials,last_date=<today YYYY-MM-DD>},
        token="{{GPT_SECRET}}")
-5. APPEND to Log:
+6. APPEND to Log:
      writeSheet(action="append", sheetName="Log",
        rowData=[<today>, <exercise>, <day>, w1, s1, w2, s2, w3, s3, partials, hit_target],
        token="{{GPT_SECRET}}")
    (Pull <day> from the Current row.)
-6. Confirm briefly, then immediately state NEXT session's target (algorithm above) so
+7. Confirm briefly, then immediately state NEXT session's target (algorithm above) so
    the user leaves knowing what to beat.
 
 ════════════════════════════════════════
