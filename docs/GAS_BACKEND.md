@@ -14,7 +14,7 @@
   named fields). Writes are serialized with `LockService` and update rewrites the
   matched row in a single `setValues` call (other columns preserved).
 - Normalize Date cells to `yyyy-MM-dd` strings on read, so the GPT never receives ISO
-  timestamps for the `date` / `last_date` columns.
+  timestamps for the `Date` column.
 - Always respond with `ContentService` JSON. Never throw to an HTML error page.
 
 ## 2. Non-Responsibilities

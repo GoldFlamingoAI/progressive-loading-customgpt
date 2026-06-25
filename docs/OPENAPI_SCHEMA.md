@@ -36,7 +36,7 @@ auth; it won't reach the script.)
   "openapi": "3.1.0",
   "info": {
     "title": "Workout Sheets Bridge",
-    "description": "Read and write workout rows in a Google Spreadsheet via Apps Script.",
+    "description": "Read and append workout rows in a single Google Sheets tab (Log) via Apps Script.",
     "version": "1.0.0"
   },
   "servers": [
@@ -54,7 +54,7 @@ auth; it won't reach the script.)
             "name": "sheetName",
             "in": "query",
             "required": true,
-            "description": "Exact tab name: 'Current' or 'Log'.",
+            "description": "Exact tab name: 'Log'.",
             "schema": { "type": "string" }
           },
           {
@@ -78,7 +78,7 @@ auth; it won't reach the script.)
       },
       "post": {
         "operationId": "writeSheet",
-        "summary": "Append a new row, or update an existing row by key.",
+        "summary": "Append a workout row to Log (or, optionally, update a row by key).",
         "requestBody": {
           "required": true,
           "content": {
@@ -93,15 +93,15 @@ auth; it won't reach the script.)
                   },
                   "sheetName": {
                     "type": "string",
-                    "description": "Exact tab name: 'Current' or 'Log'."
+                    "description": "Exact tab name: 'Log'."
                   },
                   "action": {
                     "type": "string",
                     "enum": ["append", "update"],
-                    "description": "append = add a row (Log); update = modify a row (Current)."
+                    "description": "append = add a workout row to Log (normal use); update = optionally correct an existing row by key."
                   },
                   "rowData": {
-                    "description": "append: ordered array matching the tab's columns. update: object of {header: value} for fields to change.",
+                    "description": "append: ordered array [Date, Workout, Order, Exercise, Set 1, Set 2, Set 3] — set cells are '<weight> lb x <reps>'. update: object of {header: value} for fields to change.",
                     "oneOf": [
                       { "type": "array", "items": {} },
                       { "type": "object" }
@@ -109,7 +109,7 @@ auth; it won't reach the script.)
                   },
                   "keyColumn": {
                     "type": "string",
-                    "description": "update only: header name to match on (use 'exercise')."
+                    "description": "update only: header name to match on (e.g. 'Exercise')."
                   },
                   "keyValue": {
                     "type": "string",
@@ -158,6 +158,5 @@ to the user's own Google Sheet is sufficient.
 ## Validation after pasting
 
 - [ ] GPT Action editor shows two operations: `readSheet`, `writeSheet`.
-- [ ] "Test" on `readSheet` with `sheetName=Current` and the real token returns the
-      seed rows.
+- [ ] "Test" on `readSheet` with `sheetName=Log` and the real token returns your rows.
 - [ ] "Test" on `writeSheet` append to `Log` returns `{"status":"ok","action":"appended"}`.

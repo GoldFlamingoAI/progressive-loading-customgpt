@@ -80,7 +80,10 @@ Workout Logs Spreadsheet
 
 The exact spreadsheet name is not critical, but this guide uses that name.
 
-### 1.3 Create the `Current` tab
+### 1.3 Name the tab `Log`
+
+This project uses a **single tab** named `Log` — an append-only history where each
+session is a block of rows (one row per exercise).
 
 1. Look at the bottom-left of the spreadsheet.
 2. You should see a tab, probably named `Sheet1`.
@@ -89,45 +92,32 @@ The exact spreadsheet name is not critical, but this guide uses that name.
 5. Rename it exactly:
 
 ```text
-Current
+Log
 ```
 
-Capitalization matters because the Custom GPT and Apps Script will look for this exact tab name.
+Capitalization matters because the Custom GPT and Apps Script look for this exact tab
+name. (If you already have a workout sheet, just rename its tab to `Log`.)
 
-### 1.4 Paste the `Current` headers and starter rows
+### 1.4 Paste the headers and starter rows
 
 1. Open `docs/SHEET_SETUP.md` in this repo.
 2. Find the section named **Tab-separated seed block (for direct paste)**.
 3. Copy the entire block, including the header row.
 4. Go back to Google Sheets.
-5. Click cell `A1` in the `Current` tab.
+5. Click cell `A1` in the `Log` tab.
 6. Paste the copied block.
 
 When done, row 1 should contain these headers:
 
 ```text
-exercise | day | w1 | s1 | w2 | s2 | w3 | s3 | partials | last_date
+Date | Workout | Order | Exercise | Set 1 | Set 2 | Set 3
 ```
 
-### 1.5 Create the `Log` tab
+Each `Set` cell holds weight and reps together, like `50 lb x 12`.
 
-1. At the bottom-left of Google Sheets, click the **+** button to add a new sheet tab.
-2. Rename the new tab exactly:
-
-```text
-Log
-```
-
-### 1.6 Paste the `Log` headers
-
-1. Click cell `A1` in the `Log` tab.
-2. Paste this single header row:
-
-```text
-date	exercise	day	w1	s1	w2	s2	w3	s3	partials	hit_target
-```
-
-The `Log` tab should only have the header row at first. Do not add workout rows manually unless you are repairing data later.
+> Already have your own data in this layout? Skip the seed rows — just make sure the tab
+> is named exactly `Log` and row 1 matches the headers above. The seed rows are only a
+> starting point if you're beginning from scratch.
 
 ---
 
@@ -371,7 +361,7 @@ Before creating the Custom GPT, confirm the Web App responds.
 Create a URL in this format:
 
 ```text
-https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID/exec?sheetName=Current&token=YOUR_SECRET
+https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID/exec?sheetName=Log&token=YOUR_SECRET
 ```
 
 Replace:
@@ -384,14 +374,14 @@ Paste the URL into your browser.
 Expected result:
 
 - You should see JSON text.
-- It should contain your workout rows from the `Current` tab.
+- It should contain your workout rows from the `Log` tab.
 
 ### 7.2 Test an invalid token
 
 Now change the token to something wrong:
 
 ```text
-https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID/exec?sheetName=Current&token=wrong
+https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID/exec?sheetName=Log&token=wrong
 ```
 
 Expected result:
@@ -556,7 +546,7 @@ Options:
 
 ```json
 {
-  "sheetName": "Current",
+  "sheetName": "Log",
   "token": "YOUR_SECRET"
 }
 ```
@@ -565,21 +555,19 @@ Options:
 
 Expected result:
 
-- It returns rows from the `Current` tab.
+- It returns rows from the `Log` tab.
 - It does not return an auth error.
 
 ### 11.2 Test `writeSheet` append carefully
 
-This test writes to your `Log` tab.
-
-Use a harmless test row:
+This test writes a harmless row to your `Log` tab.
 
 ```json
 {
   "token": "YOUR_SECRET",
   "sheetName": "Log",
   "action": "append",
-  "rowData": ["2026-01-01", "TEST", 0, 0, 0, 0, 0, 0, 0, 0, "no"]
+  "rowData": ["2026-01-01", "TEST", 0, "TEST", "0 lb x 0", "0 lb x 0", "0 lb x 0"]
 }
 ```
 
@@ -605,13 +593,13 @@ After the Action test works, test normal user flows.
 Ask:
 
 ```text
-What's my Day 1 workout?
+What's my Workout A today?
 ```
 
 Expected behavior:
 
 - The GPT calls `readSheet`.
-- It lists the six Day 1 exercises.
+- It lists that workout's exercises.
 - It gives set-by-set targets.
 
 ### 12.2 Test a single exercise request
@@ -624,8 +612,8 @@ What should I do for Bench Press today?
 
 Expected behavior:
 
-- The GPT reads `Current`.
-- It finds `Bench Press`.
+- The GPT reads `Log`.
+- It finds the most recent `Bench Press` row.
 - It gives three set targets.
 
 ### 12.3 Test a real log entry
@@ -635,21 +623,20 @@ Only do this when you are ready to write a real workout entry.
 Example:
 
 ```text
-I just did Bench Press: 50x13, 60x12, 70x12, no partials.
+I just did Bench Press: 50x13, 60x12, 70x12.
 ```
 
 Expected behavior:
 
-- The GPT updates the `Bench Press` row in `Current`.
-- The GPT appends a new row to `Log`.
+- The GPT appends a new `Bench Press` row to `Log` (set cells like `50 lb x 13`).
 - The GPT tells you the next target.
 
 ### 12.4 Confirm the sheet changed
 
 After logging, open the Google Sheet and check:
 
-1. In `Current`, the exercise row should show the latest reps and date.
-2. In `Log`, a new row should exist for the completed workout.
+1. A new row exists in `Log` for the completed exercise, dated today.
+2. Its set cells read like `50 lb x 13`, `60 lb x 12`, `70 lb x 12`.
 
 ---
 
@@ -687,7 +674,7 @@ Use these settings:
 Examples:
 
 ```text
-What's my Day 1 workout?
+What's my Workout A today?
 ```
 
 ```text
@@ -703,7 +690,7 @@ I just did Bench Press: 50x13, 60x12, 70x12.
 ```
 
 ```text
-I did Lat Pulldown: same weights, 11, 10, 12, with 3 partials.
+I did Lat Pulldown: same weights, 11, 10, 12.
 ```
 
 ### Check progress
@@ -745,10 +732,10 @@ The repo files should keep placeholders like:
 
 ### If the GPT logs the wrong thing
 
-1. Open the Google Sheet.
-2. Fix the `Current` row manually.
-3. If needed, delete or annotate the incorrect `Log` row.
-4. Ask the GPT for the exercise again to confirm the next target.
+1. Open the Google Sheet (the `Log` tab).
+2. Fix or delete the incorrect row by hand. The most recent row for an exercise is what
+   the GPT treats as current, so correcting that row is enough.
+3. Ask the GPT for the exercise again to confirm the next target.
 
 ---
 
@@ -762,14 +749,6 @@ Check:
 2. Did you paste the same secret into the GPT instructions?
 3. Did you accidentally include spaces before or after the secret?
 4. Did you redeploy after changing Apps Script code?
-
-### Problem: `Sheet not found: Current`
-
-Check:
-
-1. The tab is named exactly `Current`.
-2. There is no extra space in the tab name.
-3. Apps Script is bound to the correct spreadsheet.
 
 ### Problem: `Sheet not found: Log`
 
@@ -809,10 +788,8 @@ You may need to redeploy Apps Script:
 Do not consider setup complete until every box is checked.
 
 - [ ] Google Sheet exists.
-- [ ] `Current` tab exists.
-- [ ] `Current` headers and starter rows are pasted.
-- [ ] `Log` tab exists.
-- [ ] `Log` headers are pasted.
+- [ ] The tab is named exactly `Log`.
+- [ ] `Log` headers are pasted (and starter rows, if beginning from scratch).
 - [ ] Apps Script project was opened from the spreadsheet.
 - [ ] `SheetsAPI.gs` was pasted into Apps Script.
 - [ ] `KeepWarm.gs` was pasted into Apps Script.
@@ -820,13 +797,13 @@ Do not consider setup complete until every box is checked.
 - [ ] `GPT_SECRET` Script Property was created.
 - [ ] `testAll()` passed in Apps Script.
 - [ ] Apps Script Web App was deployed.
-- [ ] Browser test with valid token returned `Current` rows.
+- [ ] Browser test with valid token returned `Log` rows.
 - [ ] Browser test with invalid token returned `Forbidden: invalid token`.
 - [ ] `{{WEBAPP_DEPLOYMENT_ID}}` was replaced in the OpenAPI schema before pasting into GPT Actions.
 - [ ] `{{GPT_SECRET}}` was replaced in the GPT instructions before pasting into the GPT builder.
 - [ ] Custom GPT Action auth is set to `None`.
 - [ ] Custom GPT Action shows `readSheet` and `writeSheet`.
 - [ ] `readSheet` Action test returns rows.
-- [ ] A conversational Day 1 test returns workout targets.
-- [ ] A real workout log updates `Current` and appends to `Log`.
+- [ ] A conversational "What's my Workout A?" test returns workout targets.
+- [ ] A real workout log appends a new row to `Log`.
 - [ ] Keep-warm trigger is configured, if desired.

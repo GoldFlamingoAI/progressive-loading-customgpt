@@ -15,12 +15,12 @@ text) talking to a **Google Apps Script (GAS) Web App**, which reads and writes 
 
 Two user flows:
 
-1. **Coach flow ("What should I do today?")** — GPT reads the last session for an
-   exercise and tells the user the exact target reps/weight for each set, using the
-   progressive overload rules.
-2. **Log flow ("I just did X")** — GPT parses the user's spoken/typed results, updates
-   the `Current` sheet (overwrite latest), appends an immutable row to the `Log` sheet,
-   then states next session's target.
+1. **Coach flow ("What should I do today?")** — GPT reads the exercise's most recent row
+   from the single `Log` tab and tells the user the exact target reps/weight for each
+   set, using the progressive overload rules.
+2. **Log flow ("I just did X")** — GPT parses the user's spoken/typed results and
+   appends a new row per exercise to the `Log` tab, then states next session's target.
+   The sheet is append-only; the latest row for an exercise is its current state.
 
 **Design principle:** All progression *math* lives in the GPT system prompt. The GAS
 backend is a dumb, generic read/write bridge — it knows nothing about workouts. This
@@ -48,7 +48,7 @@ keeps the backend trivial to test and lets the playbook evolve without redeployi
                                           ▼
                                  ┌──────────────────┐
                                  │  Google Sheet    │
-                                 │  Current │ Log   │
+                                 │   Log (1 tab)    │
                                  └──────────────────┘
 ```
 
@@ -60,7 +60,7 @@ keeps the backend trivial to test and lets the playbook evolve without redeployi
 |---|---|---|
 | Frontend / NLU | OpenAI Custom GPT | Native voice (Whisper) on mobile app |
 | Bridge / backend | Google Apps Script Web App | V8 runtime, free, no servers |
-| Storage | Google Sheets (one spreadsheet, 2 tabs) | `Current` + `Log` |
+| Storage | Google Sheets (one spreadsheet, 1 tab) | `Log` (append-only) |
 | Auth | Shared secret token | Query param (GET) / body field (POST) |
 | Keep-alive | GAS time trigger | Eliminates cold starts during workout hours |
 
@@ -96,21 +96,19 @@ Codex produces exactly these artifacts. Each has a dedicated spec doc.
 
 Full column definitions and seed data are in [SHEET_SETUP.md](./SHEET_SETUP.md). Summary:
 
-**`Current` tab** — one row per exercise, overwritten each session.
+**`Log` tab** — single tab, append-only, never modified. One row per exercise per
+session. An exercise's most recent row is its current state.
 ```
-exercise | day | w1 | s1 | w2 | s2 | w3 | s3 | partials | last_date
-```
-
-**`Log` tab** — append-only, never modified.
-```
-date | exercise | day | w1 | s1 | w2 | s2 | w3 | s3 | partials | hit_target
+Date | Workout | Order | Exercise | Set 1 | Set 2 | Set 3
 ```
 
-- `wN` = weight (lb) for set N. `sN` = full reps completed for set N.
-- Three independent working sets, each its own weight (pyramid or straight).
-- `partials` = optional last-set partial reps; tracked, **never** counted toward
-  progression.
-- Dates are `YYYY-MM-DD`.
+- `Set 1` / `Set 2` / `Set 3` = a string `"<weight> lb x <reps>"` (e.g. `50 lb x 12`).
+  Three independent working sets, each its own weight (pyramid or straight); reps are
+  **full** reps.
+- `Workout` = routine label (e.g. `Workout A` / `Workout B`); `Order` = position within
+  that workout.
+- Partials are **not** tracked.
+- Dates are written `YYYY-MM-DD` (the sheet may display them in its own date format).
 
 ---
 
@@ -120,28 +118,31 @@ Generic key/value sheet bridge. Backend validates the token, never workout logic
 
 ### GET — read a tab
 ```
-GET {WEBAPP_URL}?token={SECRET}&sheetName=Current
+GET {WEBAPP_URL}?token={SECRET}&sheetName=Log
 → 200 application/json
-  [ { "exercise":"Bench Press","day":1,"w1":50,"s1":12, ... }, ... ]
+  [ { "Date":"2026-06-14","Workout":"Workout A","Order":1,
+      "Exercise":"Bench Press","Set 1":"50 lb x 12", ... }, ... ]
 ```
-Returns an array of row objects keyed by header names (row 1). Empty tab → `[]`.
+Returns an array of row objects keyed by header names (row 1). Date cells come back as
+`YYYY-MM-DD` strings. Empty tab → `[]`.
 
 ### POST — write
-Body is JSON. `action` selects behavior.
+Body is JSON. `action` selects behavior. Normal use is `append`.
 
 **Append (Log):**
 ```json
 { "token":"SECRET", "sheetName":"Log", "action":"append",
-  "rowData":["2026-06-23","Bench Press",1,50,13,60,12,70,12,0,"yes"] }
+  "rowData":["2026-06-23","Workout A",1,"Bench Press",
+             "50 lb x 13","60 lb x 12","70 lb x 12"] }
 → { "status":"ok", "action":"appended" }
 ```
 
-**Update (Current):** match a row by key column, set named fields.
+**Update (optional correction):** match a row by key column, set named fields. Not used
+in normal flows — the sheet is append-only — but available for fixing a row.
 ```json
-{ "token":"SECRET", "sheetName":"Current", "action":"update",
-  "keyColumn":"exercise", "keyValue":"Bench Press",
-  "rowData":{ "w1":50,"s1":13,"w2":60,"s2":12,"w3":70,"s3":12,
-              "partials":0,"last_date":"2026-06-23" } }
+{ "token":"SECRET", "sheetName":"Log", "action":"update",
+  "keyColumn":"Exercise", "keyValue":"Bench Press",
+  "rowData":{ "Set 1":"50 lb x 13" } }
 → { "status":"ok", "action":"updated", "row":3 }
 ```
 
@@ -178,7 +179,7 @@ Placeholders Codex must leave clearly marked for the human to fill:
 Backend is correct when **all** of these hold (see GAS_BACKEND.md §7 for runnable
 test stubs):
 
-- [ ] GET with valid token + `sheetName=Current` returns an array of objects whose
+- [ ] GET with valid token + `sheetName=Log` returns an array of objects whose
       keys equal the header row.
 - [ ] GET with wrong/missing token returns `{"error":"Forbidden: invalid token"}`.
 - [ ] GET for a nonexistent sheet returns `{"error":"Sheet not found: X"}`.
@@ -192,9 +193,9 @@ test stubs):
 
 End-to-end is correct when:
 
-- [ ] "What's Day 1?" returns all 6 Day-1 exercises with per-set targets matching
-      [PROGRESSION_RULES.md](./PROGRESSION_RULES.md).
-- [ ] Logging a session updates `Current`, appends to `Log`, and the GPT states the
+- [ ] "What's Workout A?" returns all of that workout's exercises with per-set targets
+      matching [PROGRESSION_RULES.md](./PROGRESSION_RULES.md).
+- [ ] Logging a session appends one row per exercise to `Log` and the GPT states the
       next target.
 - [ ] A 15/15/15 session triggers +2.5 lb on every set and a reset to ~8–10 reps.
 
