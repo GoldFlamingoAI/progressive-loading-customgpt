@@ -26,7 +26,7 @@ Official links you may need:
 Before deploying anything, know what each folder is for.
 
 ```text
-READ.md
+README.md
 apps-script/
   README.md
   SheetsAPI.gs
@@ -48,7 +48,7 @@ Use these files as follows:
 
 | File | What you do with it |
 |---|---|
-| `READ.md` | Quick repo overview. |
+| `README.md` | Quick repo overview. |
 | `MANUAL_PHASES.md` | This one complete manual setup guide. |
 | `docs/SHEET_SETUP.md` | Copy headers and starter rows into Google Sheets. |
 | `apps-script/SheetsAPI.gs` | Paste into Google Apps Script. |
