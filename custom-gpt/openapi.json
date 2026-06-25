@@ -1,0 +1,110 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Workout Sheets Bridge",
+    "description": "Read and write workout rows in a Google Spreadsheet via Apps Script.",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "https://script.google.com/macros/s/{{WEBAPP_DEPLOYMENT_ID}}"
+    }
+  ],
+  "paths": {
+    "/exec": {
+      "get": {
+        "operationId": "readSheet",
+        "summary": "Read all rows from a named sheet tab.",
+        "parameters": [
+          {
+            "name": "sheetName",
+            "in": "query",
+            "required": true,
+            "description": "Exact tab name: 'Current' or 'Log'.",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "token",
+            "in": "query",
+            "required": true,
+            "description": "Shared secret authentication token.",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Array of row objects keyed by header names.",
+            "content": {
+              "application/json": {
+                "schema": { "type": "array", "items": { "type": "object" } }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "writeSheet",
+        "summary": "Append a new row, or update an existing row by key.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["token", "sheetName", "action"],
+                "properties": {
+                  "token": {
+                    "type": "string",
+                    "description": "Shared secret authentication token."
+                  },
+                  "sheetName": {
+                    "type": "string",
+                    "description": "Exact tab name: 'Current' or 'Log'."
+                  },
+                  "action": {
+                    "type": "string",
+                    "enum": ["append", "update"],
+                    "description": "append = add a row (Log); update = modify a row (Current)."
+                  },
+                  "rowData": {
+                    "description": "append: ordered array matching the tab's columns. update: object of {header: value} for fields to change.",
+                    "oneOf": [
+                      { "type": "array", "items": {} },
+                      { "type": "object" }
+                    ]
+                  },
+                  "keyColumn": {
+                    "type": "string",
+                    "description": "update only: header name to match on (use 'exercise')."
+                  },
+                  "keyValue": {
+                    "type": "string",
+                    "description": "update only: value in keyColumn identifying the target row."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Result of the write.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string" },
+                    "action": { "type": "string" },
+                    "row": { "type": "integer" },
+                    "error": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
