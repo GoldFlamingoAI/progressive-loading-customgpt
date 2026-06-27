@@ -10,9 +10,12 @@
 
 - Authenticate every request against a shared secret in Script Properties.
 - `doGet`: return a named tab as an array of row-objects keyed by the header row.
-- `doPost`: `append` a row (ordered array) or `update` a row (match key column, set
-  named fields). Writes are serialized with `LockService` and update rewrites the
-  matched row in a single `setValues` call (other columns preserved).
+- `doPost`: `prepend` a workout to the top (newest-first, with a blank separator row;
+  rowData may be one row or a batch), `append` a row to the bottom, or `update` a row
+  (match key column, set named fields). Writes are serialized with `LockService` and
+  update rewrites the matched row in a single `setValues` call (other columns preserved).
+- `Archive.gs` (separate, trigger-driven): keep only the newest N workout dates in `Log`,
+  move older rows to an `Archive` tab so reads stay fast.
 - Normalize Date cells to `yyyy-MM-dd` strings on read, so the GPT never receives ISO
   timestamps for the `Date` column.
 - Always respond with `ContentService` JSON. Never throw to an HTML error page.
@@ -79,7 +82,7 @@ function doGet(e) {
   }
 }
 
-/** WRITE: POST JSON body. action = "append" | "update". */
+/** WRITE: POST JSON body. action = "prepend" | "append" | "update". */
 function doPost(e) {
   let body;
   try {
@@ -107,6 +110,7 @@ function doPost(e) {
     const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
     if (!sheet) return _error('Sheet not found: ' + sheetName);
 
+    if (action === 'prepend') return _doPrepend(sheet, body);
     if (action === 'append') return _doAppend(sheet, body);
     if (action === 'update') return _doUpdate(sheet, body);
     return _error('Unknown action: ' + action);
@@ -117,11 +121,33 @@ function doPost(e) {
   }
 }
 
-/** Append an ordered array of values as a new row. */
+/** Append an ordered array of values as a new row (bottom of the tab). */
 function _doAppend(sheet, body) {
   if (!Array.isArray(body.rowData)) return _error('rowData array is required for append');
   sheet.appendRow(body.rowData);
   return _json({ status: 'ok', action: 'appended' });
+}
+
+/** Prepend a workout to the TOP (row 2, under the header), newest-first, with a
+ *  blank separator row beneath the block so each workout stays visually grouped.
+ *  rowData may be a single row (array of scalars) or a batch (array of arrays). */
+function _doPrepend(sheet, body) {
+  let rows = body.rowData;
+  if (!Array.isArray(rows)) return _error('rowData array is required for prepend');
+  if (rows.length === 0) return _error('rowData is empty');
+  if (!Array.isArray(rows[0])) rows = [rows];           // wrap a single row
+
+  const width = sheet.getLastColumn() || rows[0].length;
+  const block = rows.map(r => {
+    const row = r.slice();
+    while (row.length < width) row.push('');             // pad short rows
+    return row;
+  });
+  block.push(new Array(width).fill(''));                 // blank separator between workouts
+
+  sheet.insertRowsAfter(1, block.length);
+  sheet.getRange(2, 1, block.length, width).setValues(block);
+  return _json({ status: 'ok', action: 'prepended', rows: rows.length });
 }
 
 /** Update named fields of the row whose keyColumn cell == keyValue. */
